@@ -56,7 +56,7 @@ impl DiagnosticReport {
 
     /// Print report to terminal with colors
     pub fn print_terminal(&self) {
-        let width = 62;
+        let width = 68;
         
         // Build content lines
         let mut content = Vec::new();
@@ -68,17 +68,13 @@ impl DiagnosticReport {
             Status::Red => "🔴",
         };
         
-        let status_line = format!(
-            "{} Overall Status: {}",
-            status_emoji,
-            format!("{:?}", self.overall_status)
-                .with(match self.overall_status {
-                    Status::Green => Color::Green,
-                    Status::Yellow => Color::Yellow,
-                    Status::Red => Color::Red,
-                })
-        );
-        content.push(status_line);
+        let status_text = format!("{:?}", self.overall_status)
+            .with(match self.overall_status {
+                Status::Green => Color::Green,
+                Status::Yellow => Color::Yellow,
+                Status::Red => Color::Red,
+            });
+        content.push(format!("{} Overall Status: {}", status_emoji, status_text));
         content.push(String::new());
 
         // Latency section with visualization
@@ -90,31 +86,26 @@ impl DiagnosticReport {
                 Status::Red => "🔴",
             };
             
-            content.push(format!(
-                "{} Network Latency: {}",
-                status_emoji,
-                format!("{:?}", status)
-                    .with(match status {
-                        Status::Green => Color::Green,
-                        Status::Yellow => Color::Yellow,
-                        Status::Red => Color::Red,
-                    })
-            ));
+            let status_text = format!("{:?}", status)
+                .with(match status {
+                    Status::Green => Color::Green,
+                    Status::Yellow => Color::Yellow,
+                    Status::Red => Color::Red,
+                });
+            content.push(format!("{} Network Latency: {}", status_emoji, status_text));
             content.push(String::new());
 
             // Create sparkline visualization
-            let spark = sparkline(&lat.samples, 50);
+            let spark = sparkline(&lat.samples, 48);
             let p50 = percentile(&lat.samples, 50.0);
             let p95 = percentile(&lat.samples, 95.0);
             
-            // Draw simple histogram/distribution
-            content.push(format!("  {:>5.1} ┤{}", lat.min_ms, 
-                spark.chars().take(50).collect::<String>()));
-            content.push(format!("  {:>5.1} ┤{}", lat.avg_ms,
-                " ".repeat(50)));
-            content.push(format!("  {:>5.1} ┤", lat.max_ms));
-            content.push(format!("         └{}", "─".repeat(50)));
-            content.push(format!("           {}  {}  {}  {}  {}",
+            // Draw chart with proper alignment
+            content.push(format!("  {:>6.1} ┤{}", lat.min_ms, spark));
+            content.push(format!("  {:>6.1} ┤", lat.avg_ms));
+            content.push(format!("  {:>6.1} ┤", lat.max_ms));
+            content.push(format!("         └{}", "─".repeat(48)));
+            content.push(format!("          {}   {}   {}   {}   {}",
                 "Min".with(Color::Cyan),
                 "Avg".with(Color::Cyan),
                 "P50".with(Color::Cyan),
@@ -122,17 +113,17 @@ impl DiagnosticReport {
                 "Max".with(Color::Cyan)));
             content.push(String::new());
 
-            // Statistics
+            // Statistics with proper spacing
             content.push(format!(
-                "  Min: {:.2}ms │ Max: {:.2}ms │ Avg: {:.2}ms",
+                "  Min: {:>6.2}ms │ Max: {:>6.2}ms │ Avg: {:>6.2}ms",
                 lat.min_ms, lat.max_ms, lat.avg_ms
             ));
             content.push(format!(
-                "  P50: {:.2}ms │ P95: {:.2}ms │ Jitter: {:.2}ms",
+                "  P50: {:>6.2}ms │ P95: {:>6.2}ms │ Jitter: {:>5.2}ms",
                 p50, p95, lat.jitter_ms
             ));
             content.push(format!(
-                "  Samples: {} │ Loss: {:.1}%",
+                "  Samples: {:>3} │ Loss: {:>4.1}%",
                 lat.samples.len(), lat.packet_loss_percent
             ));
             content.push(String::new());
