@@ -1,0 +1,17 @@
+[package]
+name = "chequer-test-game"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "chequer-test-game"
+path = "src/main.rs"
+
+[dependencies]
+chequer-common = { path = "../common" }
+
+bevy.workspace = true
+serde.workspace = true
+serde_json.workspace = true

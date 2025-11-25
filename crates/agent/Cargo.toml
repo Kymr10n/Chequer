@@ -1,0 +1,25 @@
+[package]
+name = "chequer-agent"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "chequer"
+path = "src/main.rs"
+
+[dependencies]
+chequer-common = { path = "../common" }
+chequer-report = { path = "../report" }
+
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+chrono.workspace = true

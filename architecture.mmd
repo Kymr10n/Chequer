@@ -1,0 +1,84 @@
+%% Steam Remote Play Diagnostic Tool Architecture Diagram
+%% File: steam-remote-diagnostic.mmd
+
+flowchart LR
+
+%% =========================
+%% TOP-LEVEL COMPONENTS
+%% =========================
+Client[Steam Deck / Client Agent]
+Host[Host Agent]
+Report[Report Generator]
+
+Client <-->|Diagnostics Protocol<br/>gRPC/REST/WebSocket| Host
+Client --> Report
+Host --> Report
+
+
+%% =========================
+%% CLIENT / DECK SIDE
+%% =========================
+subgraph Client_Side [Client Side - Steam Deck / Remote Client]
+    direction TB
+    CEnv[Client Environment Probe]
+    CNet[Network Tests\n(latency, jitter, bandwidth)]
+    CDec[Video Decode Tests\n(H.264 / H.265 / AV1)]
+    CAud[Audio Output Tests\n(PipeWire / Pulse)]
+    CInp[Input Tests\n(controller / keyboard / mouse)]
+    CEnv --> CNet
+    CEnv --> CDec
+    CEnv --> CAud
+    CEnv --> CInp
+end
+
+Client --> Client_Side
+
+
+%% =========================
+%% HOST / PC SIDE
+%% =========================
+subgraph Host_Side [Host Side - Gaming PC / Streaming Host]
+    direction TB
+    HEnv[Host Environment Probe]
+    HNet[Network Tests\n(ports, bandwidth, NAT)]
+    HEnc[Video Encode Tests\n(NVENC / VAAPI / AMF / QSV)]
+    HAud[Audio Routing Tests\n(PipeWire / Pulse / WASAPI)]
+    HSteam[Steam Integration\n(logs, session info)]
+    HEnv --> HNet
+    HEnv --> HEnc
+    HEnv --> HAud
+    HEnv --> HSteam
+end
+
+Host --> Host_Side
+
+
+%% =========================
+%% REPORTING LAYER
+%% =========================
+subgraph Reporting [Reporting and Recommendations]
+    direction TB
+    Agg[Result Aggregator\n(client + host data)]
+    An[Analysis Engine\nthresholds, scoring, heuristics]
+        OutCLI[CLI output<br/>traffic-light]
+    OutJSON[Machine-readable JSON]
+    OutHTML[Optional HTML/Markdown Report]
+    Agg --> An
+    An --> OutCLI
+    An --> OutJSON
+    An --> OutHTML
+end
+
+Report --> Reporting
+
+
+%% =========================
+%% STYLING
+%% =========================
+classDef host fill=#cce5ff,stroke=#004085,stroke-width:1px;
+classDef client fill=#d4edda,stroke=#155724,stroke-width:1px;
+classDef report fill=#fff3cd,stroke=#856404,stroke-width:1px;
+
+class Host,Host_Side,HEnv,HNet,HEnc,HAud,HSteam host;
+class Client,Client_Side,CEnv,CNet,CDec,CAud,CInp client;
+class Report,Reporting,Agg,An,OutCLI,OutJSON,OutHTML report;
