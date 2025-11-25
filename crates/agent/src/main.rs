@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing::info;
+use chequer_agent::{Host, Client};
+use chequer_report::DiagnosticReport;
 
 #[derive(Parser)]
 #[command(name = "chequer")]
@@ -48,13 +50,23 @@ async fn main() -> Result<()> {
 }
 
 async fn run_host(listen: String) -> Result<()> {
-    info!("Host mode not yet implemented");
-    // TODO: Implement host logic
-    Ok(())
+    let host = Host::new(listen);
+    host.run().await
 }
 
 async fn run_client(connect: String) -> Result<()> {
-    info!("Client mode not yet implemented");
-    // TODO: Implement client logic
+    let client = Client::new(connect);
+    let results = client.run().await?;
+    
+    // Generate and display report
+    let report = DiagnosticReport::from_results(results);
+    report.print_terminal();
+    
+    // Optionally save JSON
+    if let Ok(json) = report.to_json() {
+        std::fs::write("chequer-report.json", json)?;
+        info!("Report saved to chequer-report.json");
+    }
+    
     Ok(())
 }

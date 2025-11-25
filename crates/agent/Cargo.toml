@@ -5,6 +5,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+name = "chequer_agent"
+path = "src/lib.rs"
+
 [[bin]]
 name = "chequer"
 path = "src/main.rs"
