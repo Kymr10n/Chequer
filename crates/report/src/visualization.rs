@@ -126,8 +126,13 @@ pub fn draw_box(title: &str, content: Vec<String>, width: usize) -> String {
     for line in content {
         output.push('║');
         output.push(' ');
+        
+        // Calculate visible width (accounting for ANSI codes and emojis)
+        let visible_width = visible_width(&line);
+        let padding_needed = width.saturating_sub(visible_width + 3);
+        
         output.push_str(&line);
-        output.push_str(&" ".repeat(width.saturating_sub(line.len() + 3)));
+        output.push_str(&" ".repeat(padding_needed));
         output.push('║');
         output.push('\n');
     }
@@ -138,6 +143,31 @@ pub fn draw_box(title: &str, content: Vec<String>, width: usize) -> String {
     output.push('╝');
     
     output
+}
+
+/// Calculate visible width of a string (excluding ANSI codes, counting emojis as 2)
+fn visible_width(s: &str) -> usize {
+    let mut width = 0;
+    let mut in_escape = false;
+    
+    for ch in s.chars() {
+        if ch == '\x1b' {
+            in_escape = true;
+        } else if in_escape {
+            if ch == 'm' {
+                in_escape = false;
+            }
+        } else {
+            // Count emojis as width 2
+            if ch as u32 > 0x1F300 {
+                width += 2;
+            } else {
+                width += 1;
+            }
+        }
+    }
+    
+    width
 }
 
 #[cfg(test)]
