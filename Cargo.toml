@@ -34,3 +34,7 @@ tokio-tungstenite = "0.24"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+
+# Terminal UI
+crossterm = "0.28"
+unicode-width = "0.1"

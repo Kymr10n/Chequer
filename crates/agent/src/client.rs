@@ -5,6 +5,12 @@ use tokio::net::TcpStream;
 use tracing::{info, debug};
 use chrono::Utc;
 use std::time::Instant;
+use crossterm::{
+    cursor,
+    style::{Color, ResetColor, SetForegroundColor},
+    ExecutableCommand,
+};
+use std::io::{stdout, Write};
 
 /// Client agent that connects to host and runs diagnostics
 pub struct Client {
@@ -56,6 +62,12 @@ impl Client {
         info!("Running latency test ({} samples)...", self.config.latency_samples);
         
         let mut samples = Vec::with_capacity(self.config.latency_samples);
+        let mut stdout = stdout();
+        
+        // Show progress header
+        stdout.execute(SetForegroundColor(Color::Cyan))?;
+        println!("\n┌─ Running Latency Test ────────────────────────────────┐");
+        stdout.execute(ResetColor)?;
         
         for i in 0..self.config.latency_samples {
             let start = Instant::now();
@@ -73,6 +85,48 @@ impl Client {
                 Message::Pong { timestamp: recv_timestamp } => {
                     if recv_timestamp == timestamp {
                         samples.push(elapsed);
+                        
+                        // Live progress display
+                        let progress = (i + 1) as f64 / self.config.latency_samples as f64;
+                        let bar_width = 40;
+                        let filled = (progress * bar_width as f64) as usize;
+                        
+                        let current_avg = if !samples.is_empty() {
+                            samples.iter().sum::<f64>() / samples.len() as f64
+                        } else {
+                            0.0
+                        };
+                        
+                        // Color code the latency
+                        let latency_color = if elapsed < 20.0 {
+                            Color::Green
+                        } else if elapsed < 50.0 {
+                            Color::Yellow
+                        } else {
+                            Color::Red
+                        };
+                        
+                        stdout.execute(cursor::MoveToColumn(0))?;
+                        print!("│ Progress: [");
+                        stdout.execute(SetForegroundColor(Color::Green))?;
+                        print!("{}", "█".repeat(filled));
+                        stdout.execute(ResetColor)?;
+                        print!("{}", "░".repeat(bar_width - filled));
+                        print!("] {:3}%", (progress * 100.0) as u8);
+                        
+                        stdout.execute(cursor::MoveToColumn(0))?;
+                        stdout.execute(cursor::MoveDown(1))?;
+                        print!("│ Sample {}/{}: ", i + 1, self.config.latency_samples);
+                        stdout.execute(SetForegroundColor(latency_color))?;
+                        print!("{:.2}ms", elapsed);
+                        stdout.execute(ResetColor)?;
+                        print!(" │ Avg: {:.2}ms", current_avg);
+                        
+                        if i < self.config.latency_samples - 1 {
+                            stdout.execute(cursor::MoveUp(1))?;
+                        }
+                        stdout.flush()?;
+                        
                         debug!("Sample {}/{}: {:.2}ms", i + 1, self.config.latency_samples, elapsed);
                     }
                 }
@@ -86,6 +140,13 @@ impl Client {
                 tokio::time::sleep(tokio::time::Duration::from_millis(self.config.latency_interval_ms)).await;
             }
         }
+        
+        // Clear progress and show completion
+        stdout.execute(cursor::MoveToColumn(0))?;
+        stdout.execute(cursor::MoveDown(1))?;
+        stdout.execute(SetForegroundColor(Color::Cyan))?;
+        println!("└───────────────────────────────────────────────────────┘");
+        stdout.execute(ResetColor)?;
         
         // Calculate statistics
         let min_ms = samples.iter().cloned().fold(f64::INFINITY, f64::min);

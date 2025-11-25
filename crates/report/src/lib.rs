@@ -1,5 +1,9 @@
 use chequer_common::{Status, TestResults, LatencyResults};
 use serde::{Deserialize, Serialize};
+use crossterm::style::{Color, Stylize};
+
+mod visualization;
+use visualization::{sparkline, percentile, draw_box};
 
 /// Diagnostic report with analyzed results
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,38 +56,99 @@ impl DiagnosticReport {
 
     /// Print report to terminal with colors
     pub fn print_terminal(&self) {
-        println!("\n{:=^60}", " CHEQUER DIAGNOSTIC REPORT ");
+        let width = 62;
         
-        println!("\n{} Overall Status: {}{:?}{}", 
-            self.overall_status.color_code(),
-            self.overall_status.color_code(),
-            self.overall_status,
-            Status::RESET
+        // Build content lines
+        let mut content = Vec::new();
+        
+        // Overall status with emoji
+        let status_emoji = match self.overall_status {
+            Status::Green => "🟢",
+            Status::Yellow => "🟡",
+            Status::Red => "🔴",
+        };
+        
+        let status_line = format!(
+            "{} Overall Status: {}",
+            status_emoji,
+            format!("{:?}", self.overall_status)
+                .with(match self.overall_status {
+                    Status::Green => Color::Green,
+                    Status::Yellow => Color::Yellow,
+                    Status::Red => Color::Red,
+                })
         );
+        content.push(status_line);
+        content.push(String::new());
 
-        if let Some(status) = self.latency_status {
-            println!("\n{} Network Latency: {}{:?}{}", 
-                status.color_code(),
-                status.color_code(),
-                status,
-                Status::RESET
-            );
+        // Latency section with visualization
+        if let Some(lat) = &self.raw_results.latency {
+            let status = self.latency_status.unwrap_or(Status::Green);
+            let status_emoji = match status {
+                Status::Green => "🟢",
+                Status::Yellow => "🟡",
+                Status::Red => "🔴",
+            };
             
-            if let Some(lat) = &self.raw_results.latency {
-                println!("  Min: {:.2}ms | Max: {:.2}ms | Avg: {:.2}ms | Jitter: {:.2}ms",
-                    lat.min_ms, lat.max_ms, lat.avg_ms, lat.jitter_ms);
-            }
+            content.push(format!(
+                "{} Network Latency: {}",
+                status_emoji,
+                format!("{:?}", status)
+                    .with(match status {
+                        Status::Green => Color::Green,
+                        Status::Yellow => Color::Yellow,
+                        Status::Red => Color::Red,
+                    })
+            ));
+            content.push(String::new());
+
+            // Create sparkline visualization
+            let spark = sparkline(&lat.samples, 50);
+            let p50 = percentile(&lat.samples, 50.0);
+            let p95 = percentile(&lat.samples, 95.0);
+            
+            // Draw simple histogram/distribution
+            content.push(format!("  {:>5.1} ┤{}", lat.min_ms, 
+                spark.chars().take(50).collect::<String>()));
+            content.push(format!("  {:>5.1} ┤{}", lat.avg_ms,
+                " ".repeat(50)));
+            content.push(format!("  {:>5.1} ┤", lat.max_ms));
+            content.push(format!("         └{}", "─".repeat(50)));
+            content.push(format!("           {}  {}  {}  {}  {}",
+                "Min".with(Color::Cyan),
+                "Avg".with(Color::Cyan),
+                "P50".with(Color::Cyan),
+                "P95".with(Color::Cyan),
+                "Max".with(Color::Cyan)));
+            content.push(String::new());
+
+            // Statistics
+            content.push(format!(
+                "  Min: {:.2}ms │ Max: {:.2}ms │ Avg: {:.2}ms",
+                lat.min_ms, lat.max_ms, lat.avg_ms
+            ));
+            content.push(format!(
+                "  P50: {:.2}ms │ P95: {:.2}ms │ Jitter: {:.2}ms",
+                p50, p95, lat.jitter_ms
+            ));
+            content.push(format!(
+                "  Samples: {} │ Loss: {:.1}%",
+                lat.samples.len(), lat.packet_loss_percent
+            ));
+            content.push(String::new());
         }
 
+        // Recommendations
         if !self.recommendations.is_empty() {
-            println!("\n{} Recommendations:", "\x1b[36m");
+            content.push(format!("{} Recommendations:", "💡".with(Color::Blue)));
             for rec in &self.recommendations {
-                println!("  • {}", rec);
+                content.push(format!("  {} {}", "✓".with(Color::Green), rec));
             }
-            print!("{}", Status::RESET);
+            content.push(String::new());
         }
 
-        println!("\n{:=^60}\n", "");
+        // Print the fancy box
+        println!("\n{}\n", draw_box("CHEQUER DIAGNOSTIC REPORT", content, width));
     }
 
     /// Export report as JSON
