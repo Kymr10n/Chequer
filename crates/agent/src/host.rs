@@ -33,6 +33,7 @@ impl Host {
         loop {
             match listener.accept().await {
                 Ok((socket, addr)) => {
+                    socket.set_nodelay(true).ok();
                     info!("Client connected from {}", addr);
                     let results = Arc::clone(&self.results);
                     

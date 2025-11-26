@@ -29,6 +29,9 @@ clap = { version = "4.5", features = ["derive"] }
 # Game engine
 bevy = "0.14"
 
+# Low-level socket control
+socket2 = "0.5"
+
 # Networking
 tokio-tungstenite = "0.24"
 

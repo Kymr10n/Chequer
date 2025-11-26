@@ -5,12 +5,12 @@ use tokio::net::TcpStream;
 use tracing::{info, debug};
 use chrono::Utc;
 use std::time::Instant;
+use std::os::unix::io::AsRawFd;
 use crossterm::{
-    cursor,
     style::{Color, ResetColor, SetForegroundColor},
     ExecutableCommand,
 };
-use std::io::{stdout, Write};
+use std::io::stdout;
 
 /// Client agent that connects to host and runs diagnostics
 pub struct Client {
@@ -35,10 +35,24 @@ impl Client {
 
     /// Connect to host and run all diagnostics
     pub async fn run(&self) -> Result<TestResults> {
-        info!("Connecting to host at {}", self.host_addr);
-        let mut socket = TcpStream::connect(&self.host_addr)
-            .await
-            .context("Failed to connect to host")?;
+        info!("Connecting to host at {}...", self.host_addr);
+        
+        let mut socket = TcpStream::connect(&self.host_addr).await?;
+        socket.set_nodelay(true)?;
+        
+        // Disable TCP delayed ACK on Linux (TCP_QUICKACK)
+        #[cfg(target_os = "linux")]
+        unsafe {
+            let fd = socket.as_raw_fd();
+            let tcp_quickack: libc::c_int = 1;
+            libc::setsockopt(
+                fd,
+                libc::IPPROTO_TCP,
+                libc::TCP_QUICKACK,
+                &tcp_quickack as *const _ as *const libc::c_void,
+                std::mem::size_of_val(&tcp_quickack) as libc::socklen_t,
+            );
+        }
         
         info!("Connected successfully");
 
@@ -62,71 +76,37 @@ impl Client {
         info!("Running latency test ({} samples)...", self.config.latency_samples);
         
         let mut samples = Vec::with_capacity(self.config.latency_samples);
-        let mut stdout = stdout();
         
-        // Show progress header
-        stdout.execute(SetForegroundColor(Color::Cyan))?;
-        println!("\n┌─ Running Latency Test ────────────────────────────────┐");
-        stdout.execute(ResetColor)?;
-        
+        // Pure measurement loop - NO UI rendering during measurement
         for i in 0..self.config.latency_samples {
-            let start = Instant::now();
             let timestamp = Utc::now();
-            
-            // Send ping
             let ping = Message::Ping { timestamp };
+            
             send_message(socket, &ping).await?;
             
-            // Wait for pong
+            // Re-enable TCP_QUICKACK before each receive (it gets cleared after every recv)
+            #[cfg(target_os = "linux")]
+            unsafe {
+                use std::os::unix::io::AsRawFd;
+                let fd = socket.as_raw_fd();
+                let tcp_quickack: libc::c_int = 1;
+                libc::setsockopt(
+                    fd,
+                    libc::IPPROTO_TCP,
+                    libc::TCP_QUICKACK,
+                    &tcp_quickack as *const _ as *const libc::c_void,
+                    std::mem::size_of_val(&tcp_quickack) as libc::socklen_t,
+                );
+            }
+            
+            let start = Instant::now();
             let response = receive_message(socket).await?;
-            let elapsed = start.elapsed().as_secs_f64() * 1000.0; // Convert to ms
+            let elapsed = start.elapsed().as_secs_f64() * 1000.0;
             
             match response {
                 Message::Pong { timestamp: recv_timestamp } => {
                     if recv_timestamp == timestamp {
                         samples.push(elapsed);
-                        
-                        // Live progress display
-                        let progress = (i + 1) as f64 / self.config.latency_samples as f64;
-                        let bar_width = 40;
-                        let filled = (progress * bar_width as f64) as usize;
-                        
-                        let current_avg = if !samples.is_empty() {
-                            samples.iter().sum::<f64>() / samples.len() as f64
-                        } else {
-                            0.0
-                        };
-                        
-                        // Color code the latency
-                        let latency_color = if elapsed < 20.0 {
-                            Color::Green
-                        } else if elapsed < 50.0 {
-                            Color::Yellow
-                        } else {
-                            Color::Red
-                        };
-                        
-                        stdout.execute(cursor::MoveToColumn(0))?;
-                        print!("│ Progress: [");
-                        stdout.execute(SetForegroundColor(Color::Green))?;
-                        print!("{}", "█".repeat(filled));
-                        stdout.execute(ResetColor)?;
-                        print!("{}", "░".repeat(bar_width - filled));
-                        print!("] {:3}%", (progress * 100.0) as u8);
-                        
-                        stdout.execute(cursor::MoveToColumn(0))?;
-                        stdout.execute(cursor::MoveDown(1))?;
-                        print!("│ Sample {}/{}: ", i + 1, self.config.latency_samples);
-                        stdout.execute(SetForegroundColor(latency_color))?;
-                        print!("{:.2}ms", elapsed);
-                        stdout.execute(ResetColor)?;
-                        print!(" │ Avg: {:.2}ms", current_avg);
-                        
-                        if i < self.config.latency_samples - 1 {
-                            stdout.execute(cursor::MoveUp(1))?;
-                        }
-                        stdout.flush()?;
-                        
                         debug!("Sample {}/{}: {:.2}ms", i + 1, self.config.latency_samples, elapsed);
                     }
                 }
@@ -135,15 +115,15 @@ impl Client {
                 }
             }
             
-            // Wait before next sample
             if i < self.config.latency_samples - 1 {
                 tokio::time::sleep(tokio::time::Duration::from_millis(self.config.latency_interval_ms)).await;
             }
         }
         
-        // Clear progress and show completion
-        stdout.execute(cursor::MoveToColumn(0))?;
-        stdout.execute(cursor::MoveDown(1))?;
+        // Show completion (after all measurements are done)
+        let mut stdout = stdout();
+        stdout.execute(SetForegroundColor(Color::Green))?;
+        println!("\n│ Progress: [████████████████████████████████████████] 100%");
         stdout.execute(SetForegroundColor(Color::Cyan))?;
         println!("└───────────────────────────────────────────────────────┘");
         stdout.execute(ResetColor)?;
