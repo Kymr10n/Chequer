@@ -76,8 +76,14 @@ impl Client {
         info!("Running latency test ({} samples)...", self.config.latency_samples);
         
         let mut samples = Vec::with_capacity(self.config.latency_samples);
+        let mut stdout = stdout();
         
-        // Pure measurement loop - NO UI rendering during measurement
+        // Show progress header
+        stdout.execute(SetForegroundColor(Color::Cyan))?;
+        println!("\n┌─ Running Latency Test ────────────────────────────────┐");
+        stdout.execute(ResetColor)?;
+        
+        // Pure measurement loop
         for i in 0..self.config.latency_samples {
             let timestamp = Utc::now();
             let ping = Message::Ping { timestamp };
@@ -107,6 +113,45 @@ impl Client {
                 Message::Pong { timestamp: recv_timestamp } => {
                     if recv_timestamp == timestamp {
                         samples.push(elapsed);
+                        
+                        // Update progress display AFTER measurement
+                        let progress = (i + 1) as f64 / self.config.latency_samples as f64;
+                        let bar_width = 40;
+                        let filled = (progress * bar_width as f64) as usize;
+                        let current_avg = samples.iter().sum::<f64>() / samples.len() as f64;
+                        
+                        // Color code the latency
+                        let latency_color = if elapsed < 20.0 {
+                            Color::Green
+                        } else if elapsed < 50.0 {
+                            Color::Yellow
+                        } else {
+                            Color::Red
+                        };
+                        
+                        use crossterm::cursor;
+                        stdout.execute(cursor::MoveToColumn(0))?;
+                        print!("│ Progress: [");
+                        stdout.execute(SetForegroundColor(Color::Green))?;
+                        print!("{}", "█".repeat(filled));
+                        stdout.execute(ResetColor)?;
+                        print!("{}", "░".repeat(bar_width - filled));
+                        print!("] {:3}%", (progress * 100.0) as u8);
+                        
+                        stdout.execute(cursor::MoveToColumn(0))?;
+                        stdout.execute(cursor::MoveDown(1))?;
+                        print!("│ Sample {}/{}: ", i + 1, self.config.latency_samples);
+                        stdout.execute(SetForegroundColor(latency_color))?;
+                        print!("{:.2}ms", elapsed);
+                        stdout.execute(ResetColor)?;
+                        print!(" │ Avg: {:.2}ms", current_avg);
+                        
+                        if i < self.config.latency_samples - 1 {
+                            stdout.execute(cursor::MoveUp(1))?;
+                        }
+                        use std::io::Write;
+                        stdout.flush()?;
+                        
                         debug!("Sample {}/{}: {:.2}ms", i + 1, self.config.latency_samples, elapsed);
                     }
                 }
@@ -120,10 +165,11 @@ impl Client {
             }
         }
         
-        // Show completion (after all measurements are done)
-        let mut stdout = stdout();
-        stdout.execute(SetForegroundColor(Color::Green))?;
-        println!("\n│ Progress: [████████████████████████████████████████] 100%");
+        // Clear progress and show completion
+        use crossterm::{cursor, terminal};
+        stdout.execute(cursor::MoveToColumn(0))?;
+        stdout.execute(cursor::MoveDown(1))?;
+        stdout.execute(terminal::Clear(terminal::ClearType::CurrentLine))?;
         stdout.execute(SetForegroundColor(Color::Cyan))?;
         println!("└───────────────────────────────────────────────────────┘");
         stdout.execute(ResetColor)?;
